@@ -1,1 +1,1 @@
-# Cruciword
+![Cruciword](assets/cruciword.png)
