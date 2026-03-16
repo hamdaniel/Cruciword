@@ -5,11 +5,24 @@ from abc import ABC
 class Cell(ABC):
 	"""Abstract base class for all board cells."""
 	pass
+	def visualize(self, width, height):
+		output = []
+		for _ in range(height):
+			output.append(' ' * width)
+		return output
 
 
 class ClueCell(Cell):
 	"""Represents a clue cell."""
-
+	def visualize(self, width, height):
+		output = []
+		for _ in range(height // 2):
+			output.append(' ' * width)
+		output.append(' ' * (width // 2) + "?" + ' ' * (width - width // 2 - 1))
+		for _ in range(height - height // 2 - 1):
+			output.append(' ' * width)
+		return output
+	
 	def __str__(self):
 		return "?"
 
@@ -64,3 +77,55 @@ class LetterCell(Cell):
 			parts.append(f"{self.vertical_run.origin}D{self.vertical_run.length}")
 
 		return "|".join(parts) if parts else " "
+	
+	def visualize(self, width, height):
+		output = []
+
+		# Top row
+		row_1 = [' '] * width
+
+		# UL
+		if self.horizontal_run and self.horizontal_run.origin == 'U':
+			row_1[width // 2] = '⮠'
+
+		# D
+		if self.vertical_run and self.vertical_run.origin == 'U':
+			row_1[width // 2] = '↓'
+
+		output.append(''.join(row_1))
+
+		# Rows before middle
+		for _ in range(1, height // 2):
+			output.append(' ' * width)
+
+		# Middle row
+		row_mid = [' '] * width
+
+		# LD
+		if self.vertical_run and self.vertical_run.origin == 'L':
+			row_mid[0] = '⮧'
+
+		# L
+		if self.horizontal_run and self.horizontal_run.origin == 'R':
+			row_mid[width - 1] = '←'
+
+		# RD
+		if self.vertical_run and self.vertical_run.origin == 'R':
+			row_mid[width - 1] = '⮦'
+
+		output.append(''.join(row_mid))
+
+		# Rows before bottom
+		for _ in range(height // 2 + 1, height - 1):
+			output.append(' ' * width)
+
+		# Bottom row
+		row_h = [' '] * width
+
+		# DL
+		if self.horizontal_run and self.horizontal_run.origin == 'D':
+			row_h[width // 2] = '⮢'
+
+		output.append(''.join(row_h))
+
+		return output

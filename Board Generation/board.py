@@ -676,7 +676,7 @@ class Board:
 	# PRINTING
 	# -------------------------------------------------
 
-	def __str__(self):
+	def verbose_print(self):
 		cell_w = 8
 		horizontal = "+" + "+".join(["-" * cell_w] * self.width) + "+"
 
@@ -689,6 +689,24 @@ class Board:
 				row_cells.append(f"{str(self.get_cell(x, y)):^{cell_w}}")
 
 			rows.append("|" + "|".join(row_cells) + "|")
+			rows.append(horizontal)
+
+		return "\n".join(rows)
+
+	def __str__(self, cell_w = 5, cell_h = 3):
+
+		horizontal = "+" + "+".join(["-" * cell_w] * self.width) + "+"
+		rows = [horizontal]
+
+		for y in range(self.height):
+			row_cells = [
+				self.get_cell(x, y).visualize(cell_w, cell_h)
+				for x in range(self.width - 1, -1, -1)
+			]
+
+			for i in range(cell_h):
+				rows.append("|" + "|".join(cell[i] for cell in row_cells) + "|")
+
 			rows.append(horizontal)
 
 		return "\n".join(rows)
