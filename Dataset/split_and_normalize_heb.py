@@ -51,7 +51,6 @@ def main():
         if length < MIN_LENGTH or length > MAX_LENGTH:
             continue
 
-        # remove only nikud from values
         normalized_values = [remove_nikud(v) for v in value]
 
         if length not in grouped:
@@ -65,13 +64,17 @@ def main():
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
     for length, group_data in grouped.items():
-        # (extra safety: skip empty groups, though shouldn't happen)
         if not group_data:
             continue
 
+        sorted_group_data = {
+            key: group_data[key]
+            for key in sorted(group_data.keys())
+        }
+
         output_path = os.path.join(OUTPUT_DIR, f"length_{length}.json")
         with open(output_path, "w", encoding="utf-8") as f:
-            json.dump(group_data, f, ensure_ascii=False, indent=2)
+            json.dump(sorted_group_data, f, ensure_ascii=False, indent=2)
 
     print(f"Done. Created {len(grouped)} files in '{OUTPUT_DIR}'.")
 
