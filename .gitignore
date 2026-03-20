@@ -23,3 +23,7 @@ env/
 # OS
 Thumbs.db
 .DS_Store
+
+
+# Dataset files
+Dataset/output_by_length

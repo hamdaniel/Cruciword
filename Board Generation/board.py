@@ -1,6 +1,7 @@
 import random
 from cells import ClueCell, LetterCell, RunStart
 
+MAX_RUN_LENGTH = 15
 
 class Board:
 
@@ -327,6 +328,36 @@ class Board:
 			count += 1
 
 		return count
+	
+
+	def over_max_len_run_broken(self, x, y):
+
+		count = 0
+
+		left_run = 0
+		down_run = 0
+		right_run = 0
+		up_run = 0
+
+		while x - right_run + 1 > 0 and not self.is_clue_cell(x + right_run + 1, y):
+			right_run += 1
+
+		while y - up_run + 1 > 0 and not self.is_clue_cell(x, y + up_run + 1):
+			up_run += 1
+
+		if x < self.width - 1:
+			left_run = self.calc_run_length(x + 1, y, "L")
+
+		if y < self.height - 1:
+			down_run = self.calc_run_length(x, y + 1, "D")
+
+		if left_run + right_run + 1 > MAX_RUN_LENGTH:
+			count += 1
+
+		if down_run + up_run + 1 > MAX_RUN_LENGTH:
+			count += 1
+
+		return count
 
 
 	# -------------------------------------------------
@@ -635,6 +666,7 @@ class Board:
 
 		# Iterate over the rest of the board and assign clue cell with low probability in eligible cells
 		# Eligable cells have a 1/6 base probability of being a clue cell, multiplied by 0.5 for each length 1 run it would create
+		# If the clue cell would break a run of length greater than MAX_RUN_LENGTH, it is assigned with probability 1
 		coords = [(x, y) for x in range(1, self.width) for y in range(1, self.height)]
 
 		random.shuffle(coords)
@@ -643,7 +675,7 @@ class Board:
 
 			if self.is_eligible_for_clue_cell(x, y):
 
-				prob = (1.0 / 6) * (0.5 ** self.len_1_runs_created(x, y))
+				prob = 1 if self.over_max_len_run_broken(x,y) > 0 else (1.0 / 6) * (0.5 ** self.len_1_runs_created(x, y))
 
 				if random.random() < prob:
 
@@ -693,7 +725,7 @@ class Board:
 
 		return "\n".join(rows)
 
-	def __str__(self, cell_w = 5, cell_h = 3):
+	def __str__(self, cell_w = 7, cell_h = 3):
 
 		horizontal = "+" + "+".join(["-" * cell_w] * self.width) + "+"
 		rows = [horizontal]
