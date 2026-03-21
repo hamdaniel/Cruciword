@@ -1,7 +1,6 @@
 import random
-from .cells import ClueCell, LetterCell, RunStart
-
-MAX_RUN_LENGTH = 15
+from .cells import ClueCell, LetterCell, Run
+from Utils.bitarray import BitArray, HEBREW_ALPHABET, MIN_LENGTH, MAX_LENGTH
 
 class Board:
 
@@ -11,8 +10,8 @@ class Board:
 		self.height = height
 
 		self.grid = [
-			[LetterCell() for _ in range(width)]
-			for _ in range(height)
+			[LetterCell(self.width - x - 1, y) for x in range(width)]
+			for y in range(height)
 		]
 
 	# -------------------------------------------------
@@ -27,34 +26,42 @@ class Board:
 		self.grid[y][self.width - 1 - x] = cell
 
 
-	def is_clue_cell(self, x, y=None):
-
+	def is_clue_cell(self, x, y = None):
 		if y is None:
 			return isinstance(x, ClueCell)
-
+		
 		return isinstance(self.get_cell(x, y), ClueCell)
 
 
-	def is_letter_cell(self, x, y=None):
-
+	def is_letter_cell(self, x, y = None):
 		if y is None:
 			return isinstance(x, LetterCell)
-
+		
 		return isinstance(self.get_cell(x, y), LetterCell)
 
 
 	# -------------------------------------------------
-	# RUN CALCULATIONS
+	# RUN MAINTENANCE
 	# -------------------------------------------------
 
-	def calc_run_length(self, x, y, direction):
+	def assign_run(self, run, dir):
+		# Assign the run to all cells in the run
+		for x, y in run.cells_coords:
+			cell = self.get_cell(x, y)
+			if dir == "H":
+				cell.set_horizontal_run(run)
+			else:
+				cell.set_vertical_run(run)
+		
+		# Assign the run to the clue cell
+		clue_cell = self.get_cell(run.clue_x, run.clue_y)
+		clue_cell.assign_run(run)
 
-		if self.is_clue_cell(x, y):
-			return 0
 
+	def calc_potential_run_length(self, x, y, direction):
 		length = 0
-
-		if direction == "L":
+		
+		if direction == "H":
 
 			for i in range(x, self.width):
 
@@ -63,7 +70,7 @@ class Board:
 
 				length += 1
 
-		elif direction == "D":
+		else: # direction == "V"
 
 			for j in range(y, self.height):
 
@@ -73,115 +80,80 @@ class Board:
 				length += 1
 
 		return length
+	
 
-	# -------------------------------------------------
-	# CLUE OWNERSHIP
-	# -------------------------------------------------
+	def get_run_length(self, x, y, direction):
 
-	def num_clues(self, x, y):
-		if not self.is_clue_cell(x, y):
+		cell = self.get_cell(x, y)
+
+		if not self.is_letter_cell(cell):
 			return 0
+		
+		if direction == "H" and cell.has_horizontal_start() or direction == "V" and cell.has_vertical_start():
+			run = cell.get_horizontal_run() if direction == "H" else cell.get_vertical_run()
+			return run.length
+		
+		return 0
 
-		count = 0
 
-		# U neighbor: only left-going run, owned by clue below it
-		if y > 0:
-			c = self.get_cell(x, y - 1)
-			if self.is_letter_cell(c) and c.has_horizontal_start() and c.horizontal_run.origin == "D":
-				count += 1
+	def update_horizontal_run_right(self, x, y):
 
-		# D neighbor: may have left-going or down-going runs, both can belong to clue above
-		if y < self.height - 1:
-			c = self.get_cell(x, y + 1)
-			if self.is_letter_cell(c):
-				if (c.has_horizontal_start() and c.horizontal_run.origin == "U") \
-				or (c.has_vertical_start() and c.vertical_run.origin == "U"):
-					count += 1
+		# Find the horizontal run the cell to the left belongs to, if any
+		if x == 0 or not self.is_letter_cell(x - 1, y) or not self.get_cell(x - 1, y).has_horizontal_run():
+			return
+		
+		run = self.get_cell(x - 1, y).get_horizontal_run()
+		# Remove the old horizontal run from all cells in the run
+		for cell_x, cell_y in run.cells_coords:
+			if cell_x == x and cell_y == y:
+				continue
 
-		# L neighbor: may have left-going or down-going runs, both can belong to clue right
-		if x < self.width - 1:
-			c = self.get_cell(x + 1, y)
-			if self.is_letter_cell(c):
-				if (c.has_horizontal_start() and c.horizontal_run.origin == "R") \
-				or (c.has_vertical_start() and c.vertical_run.origin == "R"):
-					count += 1
+			cell = self.get_cell(cell_x, cell_y)
+			cell.delete_horizontal()
+		
+		# Calculate the new horizontal run length and assign the new run to all cells in the run
 
-		# R neighbor: only down-going run, owned by clue left
-		if x > 0:
-			c = self.get_cell(x - 1, y)
-			if self.is_letter_cell(c) and c.has_vertical_start() and c.vertical_run.origin == "L":
-				count += 1
+		new_len = self.calc_potential_run_length(run.start_x, run.start_y, "H")
 
-		return count
+		# If the new run length is less than 2, delete the run
+		if new_len < 2:
+			clue_cell = self.get_cell(run.clue_x, run.clue_y)
+			clue_cell.delete_run(run)
+			return
+		
+		run.update_length(new_len, "H")
+		self.assign_run(run, "H")
 
-	def find_clue_origin(self, x, y, direction):
 
-		if direction == "U":
-			return (x, y - 1)
 
-		if direction == "D":
-			return (x, y + 1)
+	def update_vertical_run_above(self, x, y):
+		# Find the vertical run the cell above belongs to, if any
+		if y == 0 or not self.is_letter_cell(x, y - 1) or not self.get_cell(x, y - 1).has_vertical_run():
+			return
+		
+		run = self.get_cell(x, y - 1).get_vertical_run()
 
-		if direction == "L":
-			return (x + 1, y)
+		# Remove the old vertical run from all cells in the run
+		for cell_x, cell_y in run.cells_coords:
+			if cell_x == x and cell_y == y:
+				continue
 
-		if direction == "R":
-			return (x - 1, y)
+			cell = self.get_cell(cell_x, cell_y)
+			cell.delete_vertical()
+		
+		# Calculate the new vertical run length and assign the new run to all cells in the run
 
-		return None
+		new_len = self.calc_potential_run_length(run.start_x, run.start_y, "V")
 
-	# -------------------------------------------------
-	# RUN LENGTH MAINTENANCE
-	# -------------------------------------------------
-
-	def update_left_run_lengths_to_the_right(self, x, y):
-
-		i = x - 1
-
-		while i >= 0:
-
-			cell = self.get_cell(i, y)
-
-			if isinstance(cell, ClueCell):
-				break
-
-			if self.is_letter_cell(cell) and cell.has_horizontal_start():
-
-				new_len = self.calc_run_length(i, y, "L")
-
-				if new_len >= 2:
-					cell.horizontal_run.length = new_len
-				else:
-					cell.clear_horizontal()
-
-				break
-
-			i -= 1
-
-	def update_down_run_lengths_above(self, x, y):
-
-		j = y - 1
-
-		while j >= 0:
-
-			cell = self.get_cell(x, j)
-
-			if isinstance(cell, ClueCell):
-				break
-
-			if self.is_letter_cell(cell) and cell.has_vertical_start():
-
-				new_len = self.calc_run_length(x, j, "D")
-
-				if new_len >= 2:
-					cell.vertical_run.length = new_len
-				else:
-					cell.clear_vertical()
-
-				break
-
-			j -= 1
-
+		# If the new run length is less than 2, delete the run
+		if new_len < 2:
+			clue_cell = self.get_cell(run.clue_x, run.clue_y)
+			clue_cell.delete_run(run)
+			return
+		
+		run.update_length(new_len, "V")
+		self.assign_run(run, "V")
+		
 
 	# -------------------------------------------------
 	# CLUE CELL CREATION
@@ -199,39 +171,23 @@ class Board:
 
 			above = self.get_cell(x, y - 1)
 
+			# Check if the placing the clue cell will break the vertical run above.
+			# If it does, both the clue sell the run belongs to and the cell above must have another run
 			if self.is_letter_cell(above) and above.has_vertical_start():
 
-				clue = self.find_clue_origin(x, y - 1, above.vertical_run.origin)
+				clue = self.get_cell(above.get_vertical_run().clue_x, above.get_vertical_run().clue_y)
 
 				# Check if clue above belongs to a clue cell with no other clues
-				if clue and self.num_clues(*clue) == 1:
+				if self.is_clue_cell(clue) and clue.num_runs() == 1:
 					return False
 
-				# Check if the cell above has no other run
-				i = x
-				found_left_start = False
-
-				while i >= 0:
-
-					c = self.get_cell(i, y - 1)
-
-					if isinstance(c, ClueCell):
-						break
-
-					if self.is_letter_cell(c) and c.has_horizontal_start():
-						found_left_start = True
-						break
-
-					i -= 1
-
-				if not found_left_start:
+				# Check if the cell above has a horizontal run
+				if not above.has_horizontal_run():
 					return False
 
 			# Check if the cell above is a clue cell with no other clues
-			if self.is_clue_cell(x, y - 1):
-
-				if self.num_clues(x, y - 1) == 1:
-					return False
+			if self.is_clue_cell(above) and above.num_runs() == 1:
+				return False
 
 		# --------------------------------
 		# check cell right
@@ -241,39 +197,23 @@ class Board:
 
 			right = self.get_cell(x - 1, y)
 
+			# Check if the placing the clue cell will break the vertical run above.
+			# If it does, both the clue sell the run belongs to and the cell above must have another run
 			if self.is_letter_cell(right) and right.has_horizontal_start():
 
-				clue = self.find_clue_origin(x - 1, y, right.horizontal_run.origin)
+				clue = self.get_cell(right.get_horizontal_run().clue_x, right.get_horizontal_run().clue_y)
 
 				# Check if clue to the right belongs to a clue cell with no other clues
-				if clue and self.num_clues(*clue) == 1:
+				if self.is_clue_cell(clue) and clue.num_runs() == 1:
 					return False
 
-				# Check if the cell to the right has no other run
-				j = y
-				found_up_start = False
-
-				while j >= 0:
-
-					c = self.get_cell(x - 1, j)
-
-					if isinstance(c, ClueCell):
-						break
-
-					if self.is_letter_cell(c) and c.has_vertical_start():
-						found_up_start = True
-						break
-
-					j -= 1
-
-				if not found_up_start:
+				# Check if the cell right has a vertical run
+				if not right.has_vertical_run():
 					return False
 
 			# Check if the cell to the right is a clue cell with no other clues
-			if self.is_clue_cell(x - 1, y):
-
-				if self.num_clues(x - 1, y) == 1:
-					return False
+			if self.is_clue_cell(right) and right.num_runs() == 1:
+				return False
 
 		# --------------------------------
 		# check resulting run lengths
@@ -283,11 +223,12 @@ class Board:
 		down_run = 0
 
 		if x < self.width - 1:
-			left_run = self.calc_run_length(x + 1, y, "L")
+			left_run = self.calc_potential_run_length(x + 1, y, "H")
 
 		if y < self.height - 1:
-			down_run = self.calc_run_length(x, y + 1, "D")
+			down_run = self.calc_potential_run_length(x, y + 1, "V")
 
+		# If the clue cell only has runs of length 1, it will be a clue cell with no clues
 		if left_run < 2 and down_run < 2:
 			return False
 
@@ -316,10 +257,10 @@ class Board:
 		down_run = 0
 
 		if x < self.width - 1:
-			left_run = self.calc_run_length(x + 1, y, "L")
+			left_run = self.calc_potential_run_length(x + 1, y, "H")
 
 		if y < self.height - 1:
-			down_run = self.calc_run_length(x, y + 1, "D")
+			down_run = self.calc_potential_run_length(x, y + 1, "V")
 
 		if left_run == 1:
 			count += 1
@@ -333,28 +274,18 @@ class Board:
 	def over_max_len_run_broken(self, x, y):
 
 		count = 0
+		v_length = 0
+		h_length = 0
+		if self.is_letter_cell(x, y - 1) and self.get_cell(x, y - 1).has_vertical_run():
+			v_length = self.get_cell(x, y - 1).get_vertical_run().length
 
-		left_run = 0
-		down_run = 0
-		right_run = 0
-		up_run = 0
+		if self.is_letter_cell(x - 1, y) and self.get_cell(x - 1, y).has_horizontal_run():
+			h_length = self.get_cell(x - 1, y).get_horizontal_run().length
 
-		while x - right_run - 1 > 0 and not self.is_clue_cell(x - right_run - 1, y):
-			right_run += 1
-
-		while y - up_run - 1 > 0 and not self.is_clue_cell(x, y - up_run - 1):
-			up_run += 1
-
-		if x < self.width - 1:
-			left_run = self.calc_run_length(x + 1, y, "L")
-
-		if y < self.height - 1:
-			down_run = self.calc_run_length(x, y + 1, "D")
-
-		if left_run + right_run + 1 > MAX_RUN_LENGTH:
+		if v_length > MAX_LENGTH:
 			count += 1
 
-		if down_run + up_run + 1 > MAX_RUN_LENGTH:
+		if h_length > MAX_LENGTH:
 			count += 1
 
 		return count
@@ -383,26 +314,26 @@ class Board:
 
 		if x > 0:
 			c = self.get_cell(x - 1, y)
-			if self.is_letter_cell(c) and c.has_vertical_start() and c.vertical_run.origin == "L":
+			if self.is_letter_cell(c) and c.has_vertical_start() and c.get_vertical_run().origin_dir == "L":
 				starts.append((x - 1, y, c))
 
 		if x < self.width - 1:
 			c = self.get_cell(x + 1, y)
 			if self.is_letter_cell(c):
-				if (c.has_horizontal_start() and c.horizontal_run.origin == "R") \
-				or (c.has_vertical_start() and c.vertical_run.origin == "R"):
+				if (c.has_horizontal_start() and c.get_horizontal_run().origin_dir == "R") \
+				or (c.has_vertical_start() and c.get_vertical_run().origin_dir == "R"):
 					starts.append((x + 1, y, c))
 
 		if y > 0:
 			c = self.get_cell(x, y - 1)
-			if self.is_letter_cell(c) and c.has_horizontal_start() and c.horizontal_run.origin == "D":
+			if self.is_letter_cell(c) and c.has_horizontal_start() and c.get_horizontal_run().origin_dir == "D":
 					starts.append((x, y - 1, c))
 
 		if y < self.height - 1:
 			c = self.get_cell(x, y + 1)
 			if self.is_letter_cell(c):
-				if (c.has_horizontal_start() and c.horizontal_run.origin == "U") \
-				or (c.has_vertical_start() and c.vertical_run.origin == "U"):
+				if (c.has_horizontal_start() and c.get_horizontal_run().origin_dir == "U") \
+				or (c.has_vertical_start() and c.get_vertical_run().origin_dir == "U"):
 					starts.append((x, y + 1, c))
 
 		return starts
@@ -451,14 +382,15 @@ class Board:
 
 
 	def apply_transfer_if_valid(self, ax, ay, bx, by):
-
+		a = self.get_cell(ax, ay)
+		b = self.get_cell(bx, by)
 		adjacency = self.diagonal_adjacency(ax, ay, bx, by)
 
 		# Can't transfer from A to B if A is below and to the left of B
 		if adjacency is None or adjacency == "DL":
 			return False
 		
-		if self.num_clues(ax, ay) != 2 or self.num_clues(bx, by) != 1:
+		if a.num_runs() != 2 or b.num_runs() != 1:
 			return False
 		
 		b_clues = self.clue_start_cells_of_clue(bx, by)
@@ -470,17 +402,17 @@ class Board:
 		if 'R' in adjacency:
 			aybx = self.get_cell(bx, ay)
 			if self.is_letter_cell(aybx):
-				if (aybx.has_horizontal_start() and aybx.horizontal_run.origin == "R") \
+				if (aybx.has_horizontal_start() and aybx.get_horizontal_run().origin_dir == "R") \
 				and b_clue[2] != aybx:
-					aybx.horizontal_run.origin = 'U' if adjacency[0] == 'D' else 'D'
+					aybx.get_horizontal_run().origin_dir = 'U' if adjacency[0] == 'D' else 'D'
 					return True
 				
 		if 'U' in adjacency:
 			axby = self.get_cell(ax, by)
 			if self.is_letter_cell(axby):
-				if (axby.has_vertical_start() and axby.vertical_run.origin == "U") \
+				if (axby.has_vertical_start() and axby.get_vertical_run().origin_dir == "U") \
 				and b_clue[2] != axby:
-					axby.vertical_run.origin = 'L' if adjacency[1] == 'R' else 'R'
+					axby.get_vertical_run().origin_dir = 'L' if adjacency[1] == 'R' else 'R'
 					return True
 		
 		return False
@@ -498,16 +430,14 @@ class Board:
 
 			if self.apply_transfer_if_valid(ax, ay, bx, by):
 
-				print(
-					f"Transferred clue from ({ax},{ay}) to ({bx},{by})"
-				)
+				print(f"Transferred clue from ({ax},{ay}) to ({bx},{by})")
 
 				moved += 1
 
 		return moved
 
 
-	def generate_template(self):
+	def generate_skeleton(self):
 
 		# -------------------------------------------------
 		# Top-right corner initialization
@@ -516,47 +446,37 @@ class Board:
 		# Select one of 3 possibilities for the top right corner:
 		#  ?? | _? | _?
 		#  __ | _? | __
+
+		self.set_cell(0, 0, ClueCell(0, 0))
 		choice = random.choice([1, 2, 3])
 
 		if choice == 1:
+			run_len = self.calc_potential_run_length(0, 1, "H")
+			run = Run("U", 0, 1, run_len, "H")
+			self.assign_run(run, "H")
 
-			self.set_cell(0, 0, ClueCell())
-
-			run_len = self.calc_run_length(0, 1, "L")
-			cell = self.get_cell(0, 1)
-			cell.horizontal_run = RunStart("U", run_len)
-
-			self.set_cell(1, 0, ClueCell())
-
-			run_len = self.calc_run_length(1, 1, "D")
-			cell = self.get_cell(1, 1)
-			cell.vertical_run = RunStart("U", run_len)
+			self.set_cell(1, 0, ClueCell(1, 0))
+			run_len = self.calc_potential_run_length(1, 1, "V")
+			run = Run("U", 1, 1, run_len, "V")
+			self.assign_run(run, "V")
 
 		elif choice == 2:
+			run_len = self.calc_potential_run_length(1, 0, "V")
+			run = Run("R", 1, 0, run_len, "V")
+			self.assign_run(run, "V")
 
-			self.set_cell(0, 0, ClueCell())
-
-			run_len = self.calc_run_length(1, 0, "D")
-			cell = self.get_cell(1, 0)
-			cell.vertical_run = RunStart("R", run_len)
-
-			self.set_cell(0, 1, ClueCell())
-
-			run_len = self.calc_run_length(1, 1, "L")
-			cell = self.get_cell(1, 1)
-			cell.horizontal_run = RunStart("R", run_len)
+			self.set_cell(0, 1, ClueCell(0, 1))
+			run_len = self.calc_potential_run_length(1, 1, "H")
+			run = Run("R", 1, 1, run_len, "H")
+			self.assign_run(run, "H")
 
 		else:
-
-			self.set_cell(0, 0, ClueCell())
-
-			run_len = self.calc_run_length(1, 0, "D")
-			cell = self.get_cell(1, 0)
-			cell.vertical_run = RunStart("R", run_len)
-
-			run_len = self.calc_run_length(0, 1, "L")
-			cell = self.get_cell(0, 1)
-			cell.horizontal_run = RunStart("U", run_len)
+			run_len = self.calc_potential_run_length(1, 0, "V")
+			run = Run("R", 1, 0, run_len, "V")
+			self.assign_run(run, "V")
+			run_len = self.calc_potential_run_length(0, 1, "H")
+			run = Run("U", 0, 1, run_len, "H")
+			self.assign_run(run, "H")
 
 		# -------------------------------------------------
 		# Right column clues
@@ -575,7 +495,7 @@ class Board:
 			legal = [3]
 
 			# There is a clue cell above that has only one clue
-			if y > 0 and self.num_clues(0, y - 1) == 1:
+			if y > 0 and self.is_clue_cell(0, y - 1) and self.get_cell(0, y - 1).num_runs() == 1:
 				legal.append(1)
 
 			# There is a cell below and the cell above is a clue cell
@@ -586,29 +506,27 @@ class Board:
 
 			if choice == 1:
 
-				run = self.calc_run_length(0, y, "L")
-				cell = self.get_cell(0, y)
-				cell.horizontal_run = RunStart("U", run)
+				run_len = self.calc_potential_run_length(0, y, "H")
+				run = Run("U", 0, y, run_len, "H")
+				self.assign_run(run, "H")
+
 
 			elif choice == 2:
 
-				self.set_cell(0, y + 1, ClueCell())
-
-				run = self.calc_run_length(1, y + 1, "L")
-				cell = self.get_cell(1, y + 1)
-				cell.horizontal_run = RunStart("R", run)
-
-				run = self.calc_run_length(0, y, "L")
-				cell = self.get_cell(0, y)
-				cell.horizontal_run = RunStart("D", run)
+				self.set_cell(0, y + 1, ClueCell(0, y + 1))
+				run_len = self.calc_potential_run_length(1, y + 1, "H")
+				run = Run("R", 1, y + 1, run_len, "H")
+				self.assign_run(run, "H")
+				run_len = self.calc_potential_run_length(0, y, "H")
+				run = Run("D", 0, y, run_len, "H")
+				self.assign_run(run, "H")
 
 			else:
 
-				self.set_cell(0, y, ClueCell())
-
-				run = self.calc_run_length(1, y, "L")
-				cell = self.get_cell(1, y)
-				cell.horizontal_run = RunStart("R", run)
+				self.set_cell(0, y, ClueCell(0, y))
+				run_len = self.calc_potential_run_length(1, y, "H")
+				run = Run("R", 1, y, run_len, "H")
+				self.assign_run(run, "H")
 
 		# -------------------------------------------------
 		# Top row clues
@@ -626,7 +544,7 @@ class Board:
 
 			legal = [3]
 
-			if x > 0 and self.num_clues(x - 1, 0) == 1:
+			if x > 0 and self.is_clue_cell(x - 1, 0) and self.get_cell(x - 1, 0).num_runs() == 1:
 				legal.append(1)
 
 			if x < self.width - 1 and self.is_clue_cell(x - 1, 0):
@@ -636,37 +554,34 @@ class Board:
 
 			if choice == 1:
 
-				run = self.calc_run_length(x, 0, "D")
-				cell = self.get_cell(x, 0)
-				cell.vertical_run = RunStart("R", run)
+				run_len = self.calc_potential_run_length(x, 0, "V")
+				run = Run("R", x, 0, run_len, "V")
+				self.assign_run(run, "V")
 
 			elif choice == 2:
 
-				self.set_cell(x + 1, 0, ClueCell())
-
-				run = self.calc_run_length(x + 1, 1, "D")
-				cell = self.get_cell(x + 1, 1)
-				cell.vertical_run = RunStart("U", run)
-
-				run = self.calc_run_length(x, 0, "D")
-				cell = self.get_cell(x, 0)
-				cell.vertical_run = RunStart("L", run)
+				self.set_cell(x + 1, 0, ClueCell(x + 1, 0))
+				run_len = self.calc_potential_run_length(x + 1, 1, "V")
+				run = Run("U", x + 1, 1, run_len, "V")
+				self.assign_run(run, "V")
+				run_len = self.calc_potential_run_length(x, 0, "V")
+				run = Run("L", x, 0, run_len, "V")
+				self.assign_run(run, "V")
 
 			else:
 
-				self.set_cell(x, 0, ClueCell())
+				self.set_cell(x, 0, ClueCell(x, 0))
+				run_len = self.calc_potential_run_length(x, 1, "V")
+				run = Run("U", x, 1, run_len, "V")
+				self.assign_run(run, "V")
 
-				run = self.calc_run_length(x, 1, "D")
-				cell = self.get_cell(x, 1)
-				cell.vertical_run = RunStart("U", run)
+		# # -------------------------------------------------
+		# # Random interior clues
+		# # -------------------------------------------------
 
-		# -------------------------------------------------
-		# Random interior clues
-		# -------------------------------------------------
-
-		# Iterate over the rest of the board and assign clue cell with low probability in eligible cells
-		# Eligable cells have a 1/6 base probability of being a clue cell, multiplied by 0.5 for each length 1 run it would create
-		# If the clue cell would break a run of length greater than MAX_RUN_LENGTH, it is assigned with probability 1
+		# # Iterate over the rest of the board and assign clue cell with low probability in eligible cells
+		# # Eligable cells have a 1/6 base probability of being a clue cell, multiplied by 0.5 for each length 1 run it would create
+		# # If the clue cell would break a run of length greater than MAX_LENGTH, it is assigned with probability 1
 		coords = [(x, y) for x in range(1, self.width) for y in range(1, self.height)]
 
 		random.shuffle(coords)
@@ -678,30 +593,30 @@ class Board:
 				prob = 1 if self.over_max_len_run_broken(x,y) > 0 else (1.0 / 6) * (0.5 ** self.len_1_runs_created(x, y))
 
 				if random.random() < prob:
-
-					self.set_cell(x, y, ClueCell())
+					
+					self.set_cell(x, y, ClueCell(x, y))
+					self.update_horizontal_run_right(x, y)
+					self.update_vertical_run_above(x, y)
 
 					left_run = 0
 					down_run = 0
 
 					if x < self.width - 1:
-						left_run = self.calc_run_length(x + 1, y, "L")
+						left_run = self.calc_potential_run_length(x + 1, y, "H")
 
 					if y < self.height - 1:
-						down_run = self.calc_run_length(x, y + 1, "D")
+						down_run = self.calc_potential_run_length(x, y + 1, "V")
 
 					if left_run >= 2:
-						cell = self.get_cell(x + 1, y)
-						cell.horizontal_run = RunStart("R", left_run)
+						run = Run("R", x + 1, y, left_run, "H")
+						self.assign_run(run, "H")
 
 					if down_run >= 2:
-						cell = self.get_cell(x, y + 1)
-						cell.vertical_run = RunStart("U", down_run)
+						run = Run("U", x, y + 1, down_run, "V")
+						self.assign_run(run, "V")
 
-					self.update_left_run_lengths_to_the_right(x, y)
-					self.update_down_run_lengths_above(x, y)
 
-		self.apply_all_possible_transfers()
+		# self.apply_all_possible_transfers()
 
 
 	# -------------------------------------------------
@@ -724,6 +639,7 @@ class Board:
 			rows.append(horizontal)
 
 		return "\n".join(rows)
+	
 
 	def __str__(self, cell_w = 7, cell_h = 3):
 
