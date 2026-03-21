@@ -26,5 +26,5 @@ Thumbs.db
 
 
 # Dataset files
-Dataset/Processed/output_by_length
-Dataset/Processed/bitmaps
+Data/datasets/wiktionary_heb/processed/words_by_length
+Data/datasets/wiktionary_heb/processed/bitmaps

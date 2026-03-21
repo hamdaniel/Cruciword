@@ -3,9 +3,9 @@ import json
 import re
 import xml.etree.ElementTree as ET
 
-INPUT_FILE = "raw/hewiktionary-latest-pages-articles.xml.bz2"
-OUTPUT_FILE = "processed/wiktionary_entries.json"
-FILTERED_WORDS_FILE = "raw/filtered_titles.txt"
+INPUT_FILE = "../Data/hewiktionary-latest-pages-articles.xml.bz2"
+OUTPUT_FILE = "../Data/wiktionary_entries.json"
+FILTERED_WORDS_FILE = "../Data/filtered_titles.txt"
 
 NS_URI = "http://www.mediawiki.org/xml/export-0.11/"
 NS = f"{{{NS_URI}}}"

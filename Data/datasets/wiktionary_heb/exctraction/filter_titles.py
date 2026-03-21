@@ -3,8 +3,8 @@ import re
 HEBREW_LETTER = r"\u0590-\u05FF"
 NIKUD = r"\u0591-\u05C7"
 
-INPUT_FILE = "raw/raw_titles.txt"
-OUTPUT_FILE = "raw/filtered_titles.txt"
+INPUT_FILE = "../Data/raw_titles.txt"
+OUTPUT_FILE = "../Data/filtered_titles.txt"
 
 pattern = re.compile(
     rf'^[{HEBREW_LETTER}"\'_]+(?:-[{HEBREW_LETTER}"\'_]+)*$'
