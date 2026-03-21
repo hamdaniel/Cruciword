@@ -41,7 +41,7 @@ def build_bitmaps_for_length(length: int, words: list[str]) -> dict[tuple[int, s
     logical_size = len(words)
     bitmaps = {}
 
-    for position in range(1, length + 1):
+    for position in range(length):
         for letter in HEBREW_ALPHABET:
             bitmaps[(position, letter)] = BitArray(logical_size)
 
@@ -51,7 +51,7 @@ def build_bitmaps_for_length(length: int, words: list[str]) -> dict[tuple[int, s
                 f"Word {word!r} in length_{length}.json has actual length {len(word)}"
             )
 
-        for position, letter in enumerate(word, start=1):
+        for position, letter in enumerate(word):
             if letter not in HEBREW_ALPHABET:
                 raise ValueError(
                     f"Word {word!r} contains non-Hebrew-alphabet letter {letter!r}"

@@ -1,6 +1,8 @@
+import json
 import random
+from pathlib import Path
 from .cells import ClueCell, LetterCell, Run
-from Utils.bitarray import BitArray, HEBREW_ALPHABET, MIN_LENGTH, MAX_LENGTH
+from Utils.bitarray import BitArray, HEBREW_ALPHABET, LETTER_TO_INDEX, MIN_LENGTH, MAX_LENGTH
 
 class Board:
 
@@ -13,6 +15,14 @@ class Board:
 			[LetterCell(self.width - x - 1, y) for x in range(width)]
 			for y in range(height)
 		]
+
+		self.runs = None
+		self.bit_arrays = None
+		self.bit_arrays_sizes = None
+		self.words_by_length = None
+		self.word_to_index_by_length = None
+		self.assigned_words = None
+
 
 	# -------------------------------------------------
 	# BASIC ACCESS
@@ -121,9 +131,8 @@ class Board:
 			clue_cell.delete_run(run)
 			return
 		
-		run.update_length(new_len, "H")
+		run.update_length(new_len)
 		self.assign_run(run, "H")
-
 
 
 	def update_vertical_run_above(self, x, y):
@@ -151,13 +160,14 @@ class Board:
 			clue_cell.delete_run(run)
 			return
 		
-		run.update_length(new_len, "V")
+		run.update_length(new_len)
 		self.assign_run(run, "V")
 		
 
 	# -------------------------------------------------
 	# CLUE CELL CREATION
 	# -------------------------------------------------
+
 	def is_eligible_for_clue_cell(self, x, y):
 
 		if self.is_clue_cell(x, y):
@@ -304,7 +314,6 @@ class Board:
 	# 	b. It has a clue from A that is either:
 	#		i. A vertical and originating from the right
 	#		ii. A horizontal and originating from above
-
 	def clue_start_cells_of_clue(self, x, y):
 
 		if not self.is_clue_cell(x, y):
@@ -428,25 +437,18 @@ class Board:
 
 		for ax, ay, bx, by in pairs:
 
-			if self.apply_transfer_if_valid(ax, ay, bx, by):
-
-				print(f"Transferred clue from ({ax},{ay}) to ({bx},{by})")
-
-				moved += 1
-
-		return moved
+			self.apply_transfer_if_valid(ax, ay, bx, by)
 
 
-	def generate_skeleton(self):
 
-		# -------------------------------------------------
-		# Top-right corner initialization
-		# -------------------------------------------------
+	# -------------------------------------------------
+	# SKELETON GENERATION
+	# -------------------------------------------------
 
-		# Select one of 3 possibilities for the top right corner:
-		#  ?? | _? | _?
-		#  __ | _? | __
-
+	# Select one of 3 possibilities for the top right corner:
+	#  ?? | _? | _?
+	#  __ | _? | __
+	def top_right_corner_skeleton(self):
 		self.set_cell(0, 0, ClueCell(0, 0))
 		choice = random.choice([1, 2, 3])
 
@@ -478,15 +480,13 @@ class Board:
 			run = Run("U", 0, 1, run_len, "H")
 			self.assign_run(run, "H")
 
-		# -------------------------------------------------
-		# Right column clues
-		# -------------------------------------------------
 
-		# Assign clue cells in rightmost column
-		# Each row must contain a clue defining its run. It can be defined by one of three cells:
-		# 1. The rightmost cell in the row above (not always possible)
-		# 2. The rightmost cell in the row below (not always possible)
-		# 3. The rightmost cell in the row itself (always possible)
+	# Assign clue cells in rightmost column
+	# Each row must contain a clue defining its run. It can be defined by one of three cells:
+	# 1. The rightmost cell in the row above (not always possible)
+	# 2. The rightmost cell in the row below (not always possible)
+	# 3. The rightmost cell in the row itself (always possible)
+	def right_column_skeleton(self):
 		for y in range(2, self.height):
 
 			if self.is_clue_cell(0, y):
@@ -507,36 +507,38 @@ class Board:
 			if choice == 1:
 
 				run_len = self.calc_potential_run_length(0, y, "H")
-				run = Run("U", 0, y, run_len, "H")
-				self.assign_run(run, "H")
+				if run_len >= 2:
+					run = Run("U", 0, y, run_len, "H")
+					self.assign_run(run, "H")
 
 
 			elif choice == 2:
 
 				self.set_cell(0, y + 1, ClueCell(0, y + 1))
 				run_len = self.calc_potential_run_length(1, y + 1, "H")
-				run = Run("R", 1, y + 1, run_len, "H")
-				self.assign_run(run, "H")
+				if run_len >= 2:
+					run = Run("R", 1, y + 1, run_len, "H")
+					self.assign_run(run, "H")
 				run_len = self.calc_potential_run_length(0, y, "H")
-				run = Run("D", 0, y, run_len, "H")
-				self.assign_run(run, "H")
+				if run_len >= 2:
+					run = Run("D", 0, y, run_len, "H")
+					self.assign_run(run, "H")
 
 			else:
 
 				self.set_cell(0, y, ClueCell(0, y))
 				run_len = self.calc_potential_run_length(1, y, "H")
-				run = Run("R", 1, y, run_len, "H")
-				self.assign_run(run, "H")
+				if run_len >= 2:
+					run = Run("R", 1, y, run_len, "H")
+					self.assign_run(run, "H")
 
-		# -------------------------------------------------
-		# Top row clues
-		# -------------------------------------------------
 
-		# Assign clue cells in top row
-		# Each column must contain a clue defining its run. It can be defined by one of three cells:
-		# 1. The top cell in the column to the right (not always possible)
-		# 2. The top cell in the column to the left (not always possible)
-		# 3. The top cell in the column itself (always possible)
+	# Assign clue cells in top row
+	# Each column must contain a clue defining its run. It can be defined by one of three cells:
+	# 1. The top cell in the column to the right (not always possible)
+	# 2. The top cell in the column to the left (not always possible)
+	# 3. The top cell in the column itself (always possible)
+	def top_row_skeleton(self):
 		for x in range(2, self.width):
 
 			if self.is_clue_cell(x, 0):
@@ -555,33 +557,35 @@ class Board:
 			if choice == 1:
 
 				run_len = self.calc_potential_run_length(x, 0, "V")
-				run = Run("R", x, 0, run_len, "V")
-				self.assign_run(run, "V")
+				if run_len >= 2:
+					run = Run("R", x, 0, run_len, "V")
+					self.assign_run(run, "V")
 
 			elif choice == 2:
 
 				self.set_cell(x + 1, 0, ClueCell(x + 1, 0))
 				run_len = self.calc_potential_run_length(x + 1, 1, "V")
-				run = Run("U", x + 1, 1, run_len, "V")
-				self.assign_run(run, "V")
+				if run_len >= 2:
+					run = Run("U", x + 1, 1, run_len, "V")
+					self.assign_run(run, "V")
 				run_len = self.calc_potential_run_length(x, 0, "V")
-				run = Run("L", x, 0, run_len, "V")
-				self.assign_run(run, "V")
+				if run_len >= 2:
+					run = Run("L", x, 0, run_len, "V")
+					self.assign_run(run, "V")
 
 			else:
 
 				self.set_cell(x, 0, ClueCell(x, 0))
 				run_len = self.calc_potential_run_length(x, 1, "V")
-				run = Run("U", x, 1, run_len, "V")
-				self.assign_run(run, "V")
+				if run_len >= 2:
+					run = Run("U", x, 1, run_len, "V")
+					self.assign_run(run, "V")
 
-		# # -------------------------------------------------
-		# # Random interior clues
-		# # -------------------------------------------------
 
-		# # Iterate over the rest of the board and assign clue cell with low probability in eligible cells
-		# # Eligable cells have a 1/6 base probability of being a clue cell, multiplied by 0.5 for each length 1 run it would create
-		# # If the clue cell would break a run of length greater than MAX_LENGTH, it is assigned with probability 1
+	# Iterate over the rest of the board and assign clue cell with low probability in eligible cells
+	# Eligable cells have a 1/6 base probability of being a clue cell, multiplied by 0.5 for each length 1 run it would create
+	# If the clue cell would break a run of length greater than MAX_LENGTH, it is assigned with probability 1
+	def interior_skeleton(self):	
 		coords = [(x, y) for x in range(1, self.width) for y in range(1, self.height)]
 
 		random.shuffle(coords)
@@ -590,7 +594,7 @@ class Board:
 
 			if self.is_eligible_for_clue_cell(x, y):
 
-				prob = 1 if self.over_max_len_run_broken(x,y) > 0 else (1.0 / 6) * (0.5 ** self.len_1_runs_created(x, y))
+				prob = 1 if self.over_max_len_run_broken(x,y) > 0 else (1.0 / 4) * (0.5 ** self.len_1_runs_created(x, y))
 
 				if random.random() < prob:
 					
@@ -615,8 +619,268 @@ class Board:
 						run = Run("U", x, y + 1, down_run, "V")
 						self.assign_run(run, "V")
 
+	def generate_skeleton(self):
+		self.top_right_corner_skeleton()
+		self.right_column_skeleton()
+		self.top_row_skeleton()
+		self.interior_skeleton()
+		self.apply_all_possible_transfers()
 
-		# self.apply_all_possible_transfers()
+
+	# -------------------------------------------------
+	# WORD ASSIGNMENT
+	# -------------------------------------------------
+
+	# Load the bit array files from the proccessed dataset and initialize the bit arrays for each word length, position, and letter
+	def load_dataset(self, dataset_path):
+		self.bit_arrays = []
+		self.bit_arrays_sizes = []
+		dataset_path = Path(dataset_path)
+		alphabet_size = len(HEBREW_ALPHABET)
+		self.words_by_length = []
+		self.word_to_index_by_length = []
+		self.assigned_words = {i: set() for i in range(MIN_LENGTH, MAX_LENGTH + 1)}
+
+		for length in range(MIN_LENGTH, MAX_LENGTH + 1):
+			bit_arrays_dict = {}
+			length_dir = dataset_path / "processed" / "bitmaps" / f"length_{length}"
+			bitmaps_path = length_dir / f"length_{length}.bitmaps"
+			metadata_path = length_dir / "metadata.json"
+			words_path = length_dir / "words.json"
+
+			with open(bitmaps_path, "rb") as f:
+				bit_arrays_file = f.read()
+
+			with open(metadata_path, "r", encoding="utf-8") as f:
+				metadata = json.load(f)
+				logical_size = metadata["logical_size"]
+
+			with open(words_path, "r", encoding="utf-8") as f:
+				words = json.load(f)
+
+			word_to_index = {word: i for i, word in enumerate(words)}
+
+			for pos in range(length):
+				for i, letter in enumerate(HEBREW_ALPHABET):
+					bitmap_index = i + pos * alphabet_size
+					bit_arrays_dict[(pos, letter)] = BitArray(
+						bit_arrays_file,
+						logical_size,
+						bitmap_index
+					)
+
+			self.words_by_length.append(words)
+			self.word_to_index_by_length.append(word_to_index)
+
+			self.bit_arrays.append(bit_arrays_dict)
+			self.bit_arrays_sizes.append(logical_size)
+
+	
+	# Initialize possible letters for each cell based on its positions in its runs and the bit arrays for those positions
+	def init_cells_possibilities(self):
+		self.runs = []
+		for y in range(self.height):
+			for x in range(self.width):
+				cell = self.get_cell(x, y)
+
+				if self.is_letter_cell(cell):
+
+					# initialize runs list
+					if cell.has_horizontal_start():
+						self.runs.append(cell.get_horizontal_run())
+					if cell.has_vertical_start():
+						self.runs.append(cell.get_vertical_run())
+
+					# Initialize possible letters for the cell
+					cell.possible_letters = BitArray(len(HEBREW_ALPHABET))
+					h_run = cell.get_horizontal_run()
+					v_run = cell.get_vertical_run()
+
+					h_pos = cell.horizontal_index
+					v_pos = cell.vertical_index
+
+					h_bit_arrays_dict = None
+					if h_run is not None:
+						h_bit_arrays_dict = self.bit_arrays[h_run.length - MIN_LENGTH]
+
+					v_bit_arrays_dict = None
+					if v_run is not None:
+						v_bit_arrays_dict = self.bit_arrays[v_run.length - MIN_LENGTH]
+
+					for i, letter in enumerate(HEBREW_ALPHABET):
+						h_ok = (
+							True if h_bit_arrays_dict is None
+							else h_bit_arrays_dict[(h_pos, letter)].any()
+						)
+						v_ok = (
+							True if v_bit_arrays_dict is None
+							else v_bit_arrays_dict[(v_pos, letter)].any()
+						)
+
+						if h_ok and v_ok:
+							cell.possible_letters.set(i, 1)
+
+
+	# Initialize possible words for each run to all possible words of that length
+	def init_runs_possibilities(self):
+		for run in self.runs:
+			logical_size = self.bit_arrays_sizes[run.length - MIN_LENGTH]
+			run.possible_words = BitArray(logical_size)
+			run.possible_words.set_all(True)
+
+
+	# Apply letter constraints to possible words for each run based on the possible letters of the cells in the run
+	def apply_letter_constraints_to_runs(self):
+		changed = False
+
+		for run in self.runs:
+			logical_size = self.bit_arrays_sizes[run.length - MIN_LENGTH]
+			bit_arrays_dict = self.bit_arrays[run.length - MIN_LENGTH]
+
+			for pos, (x, y) in enumerate(run.cells_coords):
+				cell = self.get_cell(x, y)
+
+				pos_bit_array = BitArray(logical_size)
+
+				for i, letter in enumerate(HEBREW_ALPHABET):
+					if cell.possible_letters.get(i):
+						pos_bit_array |= bit_arrays_dict[(pos, letter)]
+
+				old_possible_words = run.possible_words.copy()
+				run.possible_words &= pos_bit_array
+
+				if run.possible_words != old_possible_words:
+					changed = True
+		
+		return changed
+
+
+	# Apply run constraints to possible letters for each cell based on the possible words of the runs the cell belongs to
+	def apply_run_constraints_to_cells(self):
+		changed = False
+
+		for run in self.runs:
+			bit_arrays_dict = self.bit_arrays[run.length - MIN_LENGTH]
+
+			for pos, (x, y) in enumerate(run.cells_coords):
+				cell = self.get_cell(x, y)
+
+				letters_supported_by_run = BitArray(len(HEBREW_ALPHABET))
+
+				for i, letter in enumerate(HEBREW_ALPHABET):
+					# words in run that have this letter at this pos
+					supported_words = bit_arrays_dict[(pos, letter)] & run.possible_words
+					if supported_words.any():
+						letters_supported_by_run.set(i, 1)
+
+				old_letters = cell.possible_letters.copy()
+				cell.possible_letters &= letters_supported_by_run
+
+				if cell.possible_letters != old_letters:
+					changed = True
+
+		return changed
+
+
+	# Scan for runs with no possible word and cells with no possible letter, indicating a contradiction
+	def scan_for_contradictions(self):
+		for run in self.runs:
+			if not run.possible_words.any():
+				return True
+
+		for y in range(self.height):
+			for x in range(self.width):
+				cell = self.get_cell(x, y)
+				if self.is_letter_cell(cell) and not cell.possible_letters.any():
+					return True
+
+		return False
+	
+
+	# Scan for runs with only one possible word and assign that word to the run and the corresponding letters to the cells in the run
+	def assign_solved_runs(self):
+		for run in self.runs:
+			if run.possible_words.count_ones() == 1 and run.assigned_word is None:
+				word_index = run.possible_words.first_one()
+				word = self.words_by_length[run.length - MIN_LENGTH][word_index]
+				run.assigned_word = word
+				self.assigned_words[run.length].add(word)
+
+				for pos, (x, y) in enumerate(run.cells_coords):
+					cell = self.get_cell(x, y)
+					letter = word[pos]
+					letter_index = LETTER_TO_INDEX[letter]
+
+					cell.possible_letters.set_all(False)
+					cell.possible_letters.set(letter_index, True)
+					cell.assigned_letter = letter
+
+				return True
+
+		return False
+
+
+	# Scan for cells with only one possible letter and assign that letter to the cell
+	def assign_solved_cells(self):
+		changed = False
+
+		for y in range(self.height):
+			for x in range(self.width):
+				cell = self.get_cell(x, y)
+
+				if not self.is_letter_cell(cell):
+					continue
+
+				if cell.assigned_letter is None and cell.possible_letters.count_ones() == 1:
+					letter_index = cell.possible_letters.first_one()
+					letter = HEBREW_ALPHABET[letter_index]
+					cell.assigned_letter = letter
+					changed = True
+
+		return changed
+
+
+	# Remove assigned words from possible words of unassigned runs
+	def remove_assigned_words_from_runs(self):
+		changed = False
+
+		for run in self.runs:
+			if run.assigned_word is not None:
+				continue
+
+			for word in self.assigned_words[run.length]:
+				word_index = self.word_to_index_by_length[run.length - MIN_LENGTH][word]
+
+				if run.possible_words.get(word_index):
+					run.possible_words.set(word_index, 0)
+					changed = True
+
+		return changed
+
+
+	# Propagate constraints until no more can be propagated, or a contradiction is found
+	def propagate_constraints(self):
+		while True:
+			changed = False
+
+			changed |= self.remove_assigned_words_from_runs()
+			changed |= self.apply_letter_constraints_to_runs()
+			changed |= self.apply_run_constraints_to_cells()
+			changed |= self.assign_solved_cells()
+			changed |= self.assign_solved_runs()
+
+			if self.scan_for_contradictions():
+				return False
+
+			if not changed:
+				return True
+
+
+
+
+
+
+
 
 
 	# -------------------------------------------------

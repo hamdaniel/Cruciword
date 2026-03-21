@@ -79,16 +79,19 @@ class Run:
 		self.clue_x = start_x + (0 if origin_dir in ['U', 'D'] else (-1 if origin_dir == 'R' else 1))
 		self.clue_y = start_y + (0 if origin_dir in ['L', 'R'] else (-1 if origin_dir == 'U' else 1))
 		self.length = length
+		self.direction = dir
 		self.cells_coords = [(self.start_x + (i if dir == "H" else 0), self.start_y + (i if dir == "V" else 0)) for i in range(0, length)]
+		self.possible_words = None
+		self.assigned_word = None
 
 
 	def __repr__(self):
 		return f"Run(origin_dir={self.origin_dir}, length={self.length})"
 	
 
-	def update_length(self, new_length, dir):
+	def update_length(self, new_length):
 		self.length = new_length
-		self.cells_coords = [(self.start_x + (i if dir == "H" else 0), self.start_y + (i if dir == "V" else 0)) for i in range(0, new_length)]
+		self.cells_coords = [(self.start_x + (i if self.direction == "H" else 0), self.start_y + (i if self.direction == "V" else 0)) for i in range(0, new_length)]
 
 
 class LetterCell(Cell):
@@ -100,7 +103,11 @@ class LetterCell(Cell):
 	def __init__(self, x, y):
 		super().__init__(x, y)
 		self.horizontal_run = None
+		self.horizontal_index = None
 		self.vertical_run = None
+		self.vertical_index = None
+		self.possible_letters = None
+		self.assigned_letter = None
 
 
 	def get_horizontal_run(self):
@@ -113,6 +120,10 @@ class LetterCell(Cell):
 
 	def set_horizontal_run(self, run):
 		self.horizontal_run = run
+		for i, (cell_x, cell_y) in enumerate(run.cells_coords):
+			if cell_x == self.x and cell_y == self.y:
+				self.horizontal_index = i
+				break
 
 
 	def has_horizontal_start(self):
@@ -133,6 +144,11 @@ class LetterCell(Cell):
 
 	def set_vertical_run(self, run):
 		self.vertical_run = run
+		for i, (cell_x, cell_y) in enumerate(run.cells_coords):
+			if cell_x == self.x and cell_y == self.y:
+				self.vertical_index = i
+				break
+
 
 
 	def has_vertical_start(self):
@@ -142,6 +158,10 @@ class LetterCell(Cell):
 	def delete_vertical(self):
 		self.vertical_run = None
 
+
+	def has_both_runs(self):
+		return self.has_horizontal_run() and self.has_vertical_run()
+	
 
 	def has_any_start(self):
 		return self.has_horizontal_start() or self.has_vertical_start()
@@ -194,6 +214,9 @@ class LetterCell(Cell):
 		if self.has_vertical_start() and self.vertical_run.origin_dir == 'R':
 			row_mid[width - 1] = '⮦'
 
+		if self.assigned_letter is not None:
+			row_mid[width // 2] = self.assigned_letter
+			
 		output.append(''.join(row_mid))
 
 		# Rows before bottom
