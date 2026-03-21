@@ -26,5 +26,5 @@ Thumbs.db
 
 
 # Dataset files
-Dataset/output_by_length
-Dataset/bitmaps
+Dataset/Processed/output_by_length
+Dataset/Processed/bitmaps

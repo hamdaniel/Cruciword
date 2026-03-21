@@ -1,5 +1,5 @@
 import random
-from cells import ClueCell, LetterCell, RunStart
+from .cells import ClueCell, LetterCell, RunStart
 
 MAX_RUN_LENGTH = 15
 
@@ -339,10 +339,10 @@ class Board:
 		right_run = 0
 		up_run = 0
 
-		while x - right_run + 1 > 0 and not self.is_clue_cell(x + right_run + 1, y):
+		while x - right_run - 1 > 0 and not self.is_clue_cell(x - right_run - 1, y):
 			right_run += 1
 
-		while y - up_run + 1 > 0 and not self.is_clue_cell(x, y + up_run + 1):
+		while y - up_run - 1 > 0 and not self.is_clue_cell(x, y - up_run - 1):
 			up_run += 1
 
 		if x < self.width - 1:

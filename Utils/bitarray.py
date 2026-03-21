@@ -2,9 +2,12 @@ import os
 import struct
 from typing import Mapping, Union
 
+HEBREW_ALPHABET = "אבגדהוזחטיכלמנסעפצקרשת"
+
+MIN_LENGTH = 2
+MAX_LENGTH = 15
 
 class BitArray:
-    HEBREW_ALPHABET = "אבגדהוזחטיכלמנסעפצקרשת"
 
     FILE_MAGIC = b"BMAP"
     FILE_VERSION = 1
@@ -343,6 +346,40 @@ class BitArray:
         self._refresh_any_bit()
         return self
 
+
+    def __invert__(self) -> "BitArray":
+        result = BitArray(self.logical_size)
+
+        for i in range(len(self.data)):
+            result.data[i] = ~self.data[i] & 0xFF  # keep it a byte
+
+        result._clear_unused_tail_bits()
+        result._refresh_any_bit()
+        return result
+
+
+    def __invert__(self) -> "BitArray":
+        result = BitArray(self.logical_size)
+
+        for i in range(len(self.data)):
+            result.data[i] = ~self.data[i] & 0xFF  # keep it a byte
+
+        result._clear_unused_tail_bits()
+        result._refresh_any_bit()
+        return result
+    
+
+    def __sub__(self, other: "BitArray") -> "BitArray":
+        self._check_compatible(other)
+
+        result = BitArray(self.logical_size)
+
+        for i in range(len(self.data)):
+            result.data[i] = self.data[i] & (~other.data[i] & 0xFF)
+
+        result._clear_unused_tail_bits()
+        result._refresh_any_bit()
+        return result
     # -------------------------------------------------
     # FILE FORMAT
     # -------------------------------------------------

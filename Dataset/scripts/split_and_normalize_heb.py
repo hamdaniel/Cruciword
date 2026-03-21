@@ -2,11 +2,10 @@ import json
 import os
 import re
 
-INPUT_FILE = "wiktionary_entries.json"
-OUTPUT_DIR = "output_by_length"
+INPUT_FILE = "processed/wiktionary_entries.json"
+OUTPUT_DIR = "processed/output_by_length"
 
-MIN_LENGTH = 2
-MAX_LENGTH = 15
+from Utils.bitarray import MIN_LENGTH, MAX_LENGTH
 
 FINAL_MAP = str.maketrans({
     "ך": "כ",

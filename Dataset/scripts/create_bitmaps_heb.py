@@ -2,17 +2,14 @@ import json
 import os
 import re
 
-from bitarray import BitArray
+from Utils.bitarray import BitArray, HEBREW_ALPHABET, MIN_LENGTH, MAX_LENGTH
 
-INPUT_DIR = "output_by_length"
-OUTPUT_DIR = "bitmaps"
+INPUT_DIR = "processed/output_by_length"
+OUTPUT_DIR = "processed/bitmaps"
 
-MIN_LENGTH = 2
-MAX_LENGTH = 15
 
 LENGTH_FILE_RE = re.compile(r"^length_(\d+)\.json$")
 
-HEBREW_ALPHABET = "אבגדהוזחטיכלמנסעפצקרשת"
 
 
 def load_json(path: str):

@@ -3,6 +3,9 @@ import re
 HEBREW_LETTER = r"\u0590-\u05FF"
 NIKUD = r"\u0591-\u05C7"
 
+INPUT_FILE = "raw/raw_titles.txt"
+OUTPUT_FILE = "raw/filtered_titles.txt"
+
 pattern = re.compile(
     rf'^[{HEBREW_LETTER}"\'_]+(?:-[{HEBREW_LETTER}"\'_]+)*$'
 )
@@ -39,11 +42,11 @@ def is_valid_hebrew_title(title: str) -> bool:
 
     return bool(pattern.fullmatch(title))
 if __name__ == "__main__":
-    with open("raw_titles.txt", "r", encoding="utf-8") as file:
+    with open(INPUT_FILE, "r", encoding="utf-8") as file:
         titles = file.read().splitlines()
 
     filtered_titles = [t for t in titles if is_valid_hebrew_title(t)]
 
-    with open("filtered_titles.txt", "w", encoding="utf-8") as file:
+    with open(OUTPUT_FILE, "w", encoding="utf-8") as file:
         for title in filtered_titles:
             file.write(title + "\n")
