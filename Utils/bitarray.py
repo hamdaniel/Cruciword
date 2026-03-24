@@ -563,3 +563,77 @@ class BitArray:
 			raise ValueError(f"letter {letter!r} is not in the alphabet") from None
 
 		return (position - 1) * len(alphabet) + letter_index
+	
+
+class bitArrayStack:
+	def __init__(self, logical_size):
+		self.logical_size = logical_size
+		self.stack = [BitArray(logical_size)]
+	
+	
+	def copy_head(self):
+		self.stack.append(self.stack[-1].copy())
+	
+
+	def pop(self):
+		if not self.stack:
+			raise IndexError("pop from empty stack")
+		return self.stack.pop()
+	
+
+	def top(self):
+		return self.stack[-1].copy() if self.stack else None
+	
+
+	def __and__(self, bit_array):
+		if bit_array.logical_size != self.logical_size:
+			raise ValueError("bit array logical size mismatch")
+		if not self.stack:
+			raise IndexError("applying logical AND to empty stack")
+		return self.stack[-1] & bit_array
+	
+
+	def __iand__(self, bit_array):
+		if bit_array.logical_size != self.logical_size:
+			raise ValueError("bit array logical size mismatch")
+		if not self.stack:
+			raise IndexError("applying logical AND to empty stack")
+		else:
+			self.stack[-1] &= bit_array
+		return self
+
+
+	def set(self, i, value):
+		if not self.stack:
+			raise IndexError("setting bit on empty stack")
+		self.stack[-1].set(i, value)
+	
+
+	def get(self, i):
+		if not self.stack:
+			raise IndexError("getting bit from empty stack")
+		return self.stack[-1].get(i)
+
+
+	def set_all(self, value):
+		if not self.stack:
+			raise IndexError("setting bits on empty stack")
+		self.stack[-1].set_all(value)
+
+
+	def any(self):
+		if not self.stack:
+			raise IndexError("checking any on empty stack")
+		return self.stack[-1].any()
+
+
+	def first_one(self):
+		if not self.stack:
+			raise IndexError("checking first_one on empty stack")
+		return self.stack[-1].first_one()
+
+
+	def count_ones(self):
+		if not self.stack:
+			raise IndexError("counting ones on empty stack")
+		return self.stack[-1].count_ones()	
