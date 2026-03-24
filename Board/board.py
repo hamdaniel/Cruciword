@@ -2,7 +2,7 @@ import json
 import random
 from pathlib import Path
 from .cells import ClueCell, LetterCell, Run
-from Utils.bitarray import BitArray, HEBREW_ALPHABET, LETTER_TO_INDEX, MIN_LENGTH, MAX_LENGTH
+from Utils.bitarray import BitArray, bitArrayStack, HEBREW_ALPHABET, LETTER_TO_INDEX, MIN_LENGTH, MAX_LENGTH
 
 class Board:
 
@@ -34,6 +34,17 @@ class Board:
 
 	def set_cell(self, x, y, cell):
 		self.grid[y][self.width - 1 - x] = cell
+
+
+	def reset_generation_state(self):
+		# Rebuild board cells so every generation attempt starts from a clean slate.
+		self.grid = [
+			[LetterCell(self.width - x - 1, y) for x in range(self.width)]
+			for y in range(self.height)
+		]
+		self.runs = None
+		if self.assigned_words is not None:
+			self.assigned_words = {i: set() for i in range(MIN_LENGTH, MAX_LENGTH + 1)}
 
 
 	def is_clue_cell(self, x, y = None):
@@ -347,6 +358,7 @@ class Board:
 
 		return starts
 	
+
 	# Determine the diagonal adjacency type of B from A, if any
 	# Returns one of "UR", "DR", "UL", "DL", or None
 	def diagonal_adjacency(self, ax, ay, bx, by):
@@ -438,7 +450,6 @@ class Board:
 		for ax, ay, bx, by in pairs:
 
 			self.apply_transfer_if_valid(ax, ay, bx, by)
-
 
 
 	# -------------------------------------------------
@@ -598,6 +609,23 @@ class Board:
 
 				if random.random() < prob:
 					
+					# If the cell being converted is the start of a run, delete that run
+					cell = self.get_cell(x, y)
+					if self.is_letter_cell(cell):
+						if cell.has_horizontal_start():
+							h_run = cell.get_horizontal_run()
+							for cx, cy in h_run.cells_coords:
+								self.get_cell(cx, cy).delete_horizontal()
+							clue = self.get_cell(h_run.clue_x, h_run.clue_y)
+							clue.delete_run(h_run)
+						
+						if cell.has_vertical_start():
+							v_run = cell.get_vertical_run()
+							for cx, cy in v_run.cells_coords:
+								self.get_cell(cx, cy).delete_vertical()
+							clue = self.get_cell(v_run.clue_x, v_run.clue_y)
+							clue.delete_run(v_run)
+					
 					self.set_cell(x, y, ClueCell(x, y))
 					self.update_horizontal_run_right(x, y)
 					self.update_vertical_run_above(x, y)
@@ -692,7 +720,7 @@ class Board:
 						self.runs.append(cell.get_vertical_run())
 
 					# Initialize possible letters for the cell
-					cell.possible_letters = BitArray(len(HEBREW_ALPHABET))
+					cell.possible_letters = bitArrayStack(len(HEBREW_ALPHABET))
 					h_run = cell.get_horizontal_run()
 					v_run = cell.get_vertical_run()
 
@@ -725,7 +753,7 @@ class Board:
 	def init_runs_possibilities(self):
 		for run in self.runs:
 			logical_size = self.bit_arrays_sizes[run.length - MIN_LENGTH]
-			run.possible_words = BitArray(logical_size)
+			run.possible_words = bitArrayStack(logical_size)
 			run.possible_words.set_all(True)
 
 
@@ -746,10 +774,10 @@ class Board:
 					if cell.possible_letters.get(i):
 						pos_bit_array |= bit_arrays_dict[(pos, letter)]
 
-				old_possible_words = run.possible_words.copy()
+				old_possible_words = run.possible_words.top()
 				run.possible_words &= pos_bit_array
 
-				if run.possible_words != old_possible_words:
+				if run.possible_words.top() != old_possible_words:
 					changed = True
 		
 		return changed
@@ -769,14 +797,14 @@ class Board:
 
 				for i, letter in enumerate(HEBREW_ALPHABET):
 					# words in run that have this letter at this pos
-					supported_words = bit_arrays_dict[(pos, letter)] & run.possible_words
+					supported_words = run.possible_words & bit_arrays_dict[(pos, letter)]
 					if supported_words.any():
 						letters_supported_by_run.set(i, 1)
 
-				old_letters = cell.possible_letters.copy()
+				old_letters = cell.possible_letters.top()
 				cell.possible_letters &= letters_supported_by_run
 
-				if cell.possible_letters != old_letters:
+				if cell.possible_letters.top() != old_letters:
 					changed = True
 
 		return changed
@@ -803,6 +831,7 @@ class Board:
 			if run.possible_words.count_ones() == 1 and run.assigned_word is None:
 				word_index = run.possible_words.first_one()
 				word = self.words_by_length[run.length - MIN_LENGTH][word_index]
+
 				run.assigned_word = word
 				self.assigned_words[run.length].add(word)
 
@@ -873,12 +902,73 @@ class Board:
 				return False
 
 			if not changed:
+				for run in self.runs:
+					print(f"out of {run.possible_words.logical_size} possible words, {run.possible_words.count_ones()} left ")
 				return True
 
 
+	def find_cell_guess(self):
+		most_constrained_run = None
+		min_possible_words = float("inf")
 
+		for run in self.runs:
+			if run.assigned_word is not None:
+				continue
 
+			count = run.possible_words.count_ones()
 
+			if count <= 1:
+				continue
+
+			if count < min_possible_words:
+				min_possible_words = count
+				most_constrained_run = run
+
+		if most_constrained_run is None:
+			return None, None, None
+
+		best_pos = None
+		best_letter_index = None
+		max_score = -1
+
+		run_len_bit_arrays = self.bit_arrays[most_constrained_run.length - MIN_LENGTH]
+
+		for pos, (x, y) in enumerate(most_constrained_run.cells_coords):
+			cell = self.get_cell(x, y)
+
+			if most_constrained_run.direction == "H":
+				perpendicular_run = cell.get_vertical_run()
+				perpendicular_pos = cell.vertical_index
+			else:
+				perpendicular_run = cell.get_horizontal_run()
+				perpendicular_pos = cell.horizontal_index
+
+			for i, letter in enumerate(HEBREW_ALPHABET):
+				if not cell.possible_letters.get(i):
+					continue
+
+				main_count = (
+					most_constrained_run.possible_words
+					& run_len_bit_arrays[(pos, letter)]
+				).count_ones()
+
+				if perpendicular_run is not None:
+					perp_bit_arrays = self.bit_arrays[perpendicular_run.length - MIN_LENGTH]
+					perpendicular_count = (
+						perpendicular_run.possible_words
+						& perp_bit_arrays[(perpendicular_pos, letter)]
+					).count_ones()
+				else:
+					perpendicular_count = 1
+
+				score = main_count * perpendicular_count
+
+				if score > max_score:
+					max_score = score
+					best_pos = pos
+					best_letter_index = i
+
+		return most_constrained_run, best_pos, best_letter_index
 
 
 
@@ -903,6 +993,123 @@ class Board:
 			rows.append(horizontal)
 
 		return "\n".join(rows)
+
+
+	def _collect_assigned_letters(self, x, y, dx, dy):
+		letters = []
+		coords = []
+
+		cx, cy = x, y
+		while 0 <= cx < self.width and 0 <= cy < self.height:
+			cell = self.get_cell(cx, cy)
+			if not self.is_letter_cell(cell):
+				break
+			if cell.assigned_letter is None:
+				break
+			letters.append(cell.assigned_letter)
+			coords.append((cx, cy))
+			cx += dx
+			cy += dy
+
+		return letters, coords
+
+
+	def _debug_side_run_info(self, coords, axis):
+		info = []
+		for x, y in coords:
+			cell = self.get_cell(x, y)
+			if not self.is_letter_cell(cell):
+				info.append(f"({x},{y}):not-letter")
+				continue
+
+			if axis == "H":
+				run = cell.get_horizontal_run()
+				idx = cell.horizontal_index
+			else:
+				run = cell.get_vertical_run()
+				idx = cell.vertical_index
+
+			if run is None:
+				info.append(f"({x},{y}):no-{axis}-run")
+			else:
+				info.append(
+					f"({x},{y}):start=({run.start_x},{run.start_y})"
+					f" clue=({run.clue_x},{run.clue_y}) idx={idx} len={run.length}"
+				)
+
+		return info
+
+
+	def debug_detect_words_crossing_clues(self):
+		if self.words_by_length is None:
+			print("[RUN-DEBUG][cross-clue] skipped: words_by_length not loaded")
+			return
+
+		# Ignore very short matches like 2-letter words, which are often incidental.
+		min_report_len = 4
+
+		word_sets_by_len = {
+			length: set(self.words_by_length[length - MIN_LENGTH])
+			for length in range(MIN_LENGTH, MAX_LENGTH + 1)
+		}
+
+		hits = 0
+
+		for y in range(self.height):
+			for x in range(self.width):
+				if not self.is_clue_cell(x, y):
+					continue
+
+				# Horizontal: check both concatenation orders so RTL/LTR display cannot hide issues.
+				left_letters, left_coords = self._collect_assigned_letters(x - 1, y, -1, 0)
+				right_letters, right_coords = self._collect_assigned_letters(x + 1, y, 1, 0)
+
+				if left_letters and right_letters:
+					cand_1 = "".join(reversed(left_letters)) + "".join(right_letters)
+					cand_2 = "".join(reversed(right_letters)) + "".join(left_letters)
+
+					for axis, cand, c1, c2 in (
+						("H", cand_1, list(reversed(left_coords)), right_coords),
+						("H", cand_2, list(reversed(right_coords)), left_coords),
+					):
+						l = len(cand)
+						if l >= min_report_len and l <= MAX_LENGTH and cand in word_sets_by_len[l]:
+							hits += 1
+							side_a_info = self._debug_side_run_info(c1, "H")
+							side_b_info = self._debug_side_run_info(c2, "H")
+							print(
+								f"[RUN-DEBUG][cross-clue] dictionary word spans clue: "
+								f"word={cand} axis={axis} clue=({x},{y}) "
+								f"side_a={c1} side_b={c2} "
+								f"side_a_runs={side_a_info} side_b_runs={side_b_info}"
+							)
+
+				# Vertical: check both concatenation orders.
+				up_letters, up_coords = self._collect_assigned_letters(x, y - 1, 0, -1)
+				down_letters, down_coords = self._collect_assigned_letters(x, y + 1, 0, 1)
+
+				if up_letters and down_letters:
+					cand_1 = "".join(reversed(up_letters)) + "".join(down_letters)
+					cand_2 = "".join(reversed(down_letters)) + "".join(up_letters)
+
+					for axis, cand, c1, c2 in (
+						("V", cand_1, list(reversed(up_coords)), down_coords),
+						("V", cand_2, list(reversed(down_coords)), up_coords),
+					):
+						l = len(cand)
+						if l >= min_report_len and l <= MAX_LENGTH and cand in word_sets_by_len[l]:
+							hits += 1
+							side_a_info = self._debug_side_run_info(c1, "V")
+							side_b_info = self._debug_side_run_info(c2, "V")
+							print(
+								f"[RUN-DEBUG][cross-clue] dictionary word spans clue: "
+								f"word={cand} axis={axis} clue=({x},{y}) "
+								f"side_a={c1} side_b={c2} "
+								f"side_a_runs={side_a_info} side_b_runs={side_b_info}"
+							)
+
+		if hits == 0:
+			print("[RUN-DEBUG][cross-clue] no dictionary words detected across clue cells")
 	
 
 	def __str__(self, cell_w = 7, cell_h = 3):
