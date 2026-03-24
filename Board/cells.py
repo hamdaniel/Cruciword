@@ -1,5 +1,5 @@
 from __future__ import annotations
-from Utils.bitarray import BitArray, HEBREW_ALPHABET
+from Utils.bitarray import BitArray,bitArrayStack, HEBREW_ALPHABET
 
 class Cell:
 	"""Abstract base class for all board cells."""
