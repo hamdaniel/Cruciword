@@ -10,7 +10,7 @@ def main(seed=None):
 
 	random.seed(seed)
 
-	board = Board(5, 5)
+	board = Board(10, 10)
 	board.load_dataset("Data/datasets/wiktionary_heb")
 	while True:
 		board.reset_generation_state()
@@ -18,6 +18,18 @@ def main(seed=None):
 		board.init_cells_possibilities()
 		board.init_runs_possibilities()
 		if(board.solve()):
+			valid, reason = board.validate_assigned_runs()
+			if not valid:
+				print(f"Invalid solved board rejected: {reason}")
+				continue
+
+			words = [run.assigned_word for run in board.runs if run.assigned_word is not None]
+			print("Crossword words:")
+			for word in words:
+				for i in range(len(word) - 1, -1, -1):
+					print(word[i], end="")
+				print()
+
 			print(board)
 			break
 		else:

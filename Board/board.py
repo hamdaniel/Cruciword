@@ -940,6 +940,28 @@ class Board:
 
 		return True
 
+	# Validate that each assigned run is a dataset word and matches currently assigned cell letters.
+	def validate_assigned_runs(self):
+		for run in self.runs:
+			if run.assigned_word is None:
+				return False, f"Run has no assigned word: dir={run.direction}, len={run.length}, coords={run.cells_coords}"
+
+			word_to_index = self.word_to_index_by_length[run.length - MIN_LENGTH]
+			if run.assigned_word not in word_to_index:
+				return False, f"Run assigned word not in dataset: {run.assigned_word}, len={run.length}, coords={run.cells_coords}"
+
+			letters = []
+			for x, y in run.cells_coords:
+				cell = self.get_cell(x, y)
+				if not self.is_letter_cell(cell) or cell.assigned_letter is None:
+					return False, f"Run contains unassigned/non-letter cell: dir={run.direction}, len={run.length}, coords={run.cells_coords}"
+				letters.append(cell.assigned_letter)
+
+			if "".join(letters) != run.assigned_word:
+				return False, f"Run letter mismatch: expected={run.assigned_word}, got={''.join(letters)}, coords={run.cells_coords}"
+
+		return True, None
+
 	# Propagate constraints until no more can be propagated, or a contradiction is found
 	def propagate_constraints(self):
 		while True:
