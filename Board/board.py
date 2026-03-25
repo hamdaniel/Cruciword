@@ -869,6 +869,44 @@ class Board:
 		return changed
 
 
+	# Revert not certain letter and run assignments
+	def unassign_incorrect_assignments(self):
+		
+		for run in self.runs:
+			if run.assigned_word is None:
+				continue
+
+			count = run.possible_words.count_ones()
+			if count != 1:
+				self.assigned_words[run.length].discard(run.assigned_word)
+				run.assigned_word = None
+				continue
+
+			word_index = run.possible_words.first_one()
+			singleton_word = self.words_by_length[run.length - MIN_LENGTH][word_index]
+			if run.assigned_word != singleton_word:
+				self.assigned_words[run.length].discard(run.assigned_word)
+				run.assigned_word = singleton_word
+				self.assigned_words[run.length].add(singleton_word)
+
+		for y in range(self.height):
+			for x in range(self.width):
+				cell = self.get_cell(x, y)
+				if not self.is_letter_cell(cell) or cell.assigned_letter is None:
+					continue
+
+				count = cell.possible_letters.count_ones()
+				if count != 1:
+					cell.assigned_letter = None
+					continue
+
+				singleton_letter = HEBREW_ALPHABET[cell.possible_letters.first_one()]
+				if cell.assigned_letter != singleton_letter:
+					cell.assigned_letter = singleton_letter
+
+		return True
+
+
 	# Remove assigned words from possible words of unassigned runs
 	def remove_assigned_words_from_runs(self):
 		changed = False
@@ -887,6 +925,21 @@ class Board:
 		return changed
 
 
+
+	# Check if the board is solved (all runs have an assigned word and all cells have an assigned letter)
+	def is_solved(self):
+		for run in self.runs:
+			if run.assigned_word is None:
+				return False
+
+		for y in range(self.height):
+			for x in range(self.width):
+				cell = self.get_cell(x, y)
+				if self.is_letter_cell(cell) and cell.assigned_letter is None:
+					return False
+
+		return True
+
 	# Propagate constraints until no more can be propagated, or a contradiction is found
 	def propagate_constraints(self):
 		while True:
@@ -902,8 +955,6 @@ class Board:
 				return False
 
 			if not changed:
-				for run in self.runs:
-					print(f"out of {run.possible_words.logical_size} possible words, {run.possible_words.count_ones()} left ")
 				return True
 
 
@@ -925,7 +976,7 @@ class Board:
 				most_constrained_run = run
 
 		if most_constrained_run is None:
-			return None, None, None
+			return None, None
 
 		best_pos = None
 		best_letter_index = None
@@ -935,6 +986,9 @@ class Board:
 
 		for pos, (x, y) in enumerate(most_constrained_run.cells_coords):
 			cell = self.get_cell(x, y)
+
+			if cell.assigned_letter is not None:
+				continue
 
 			if most_constrained_run.direction == "H":
 				perpendicular_run = cell.get_vertical_run()
@@ -968,10 +1022,68 @@ class Board:
 					best_pos = pos
 					best_letter_index = i
 
-		return most_constrained_run, best_pos, best_letter_index
+		constraint_bitmap = BitArray(len(HEBREW_ALPHABET))
+		constraint_bitmap.set(best_letter_index, 1)
+		return most_constrained_run.cells_coords[best_pos], constraint_bitmap
 
 
+	# Save board state and apply constraint to a cell
+	def apply_constraint(self, x, y, bitmap):
+		for run in self.runs:
+			run.possible_words.copy_head()
+		for cell in self.grid:
+			if self.is_letter_cell(cell):
+				cell.possible_letters.copy_head()
+		cell = self.get_cell(x, y)
+		cell.possible_letters &= bitmap
+	
 
+	# Restore previous board state by popping the head of the bit array stacks.
+	# Remove assigned words and letters from unsolved runs and cells.
+	def restore_state(self):
+		for run in self.runs:
+			run.possible_words.pop()
+		for cell in self.grid:
+			if self.is_letter_cell(cell):
+				cell.possible_letters.pop()
+				
+		self.unassign_incorrect_assignments()
+
+
+	# Repeat this loop until solved or a contradiction is found:
+	# 1. Propagate constraints until no more can be propagated, or a contradiction is found
+	# 2. If solved, return True
+	# 3. Otherwise, select a cell and letter to guess based on the most constrained run and the bit arrays
+	# 4. Assign the guessed letter and recurse. if leads to contradiction, flip guess and recurse.
+	def solve(self):
+		# If returns false, found contradiction
+		if not self.propagate_constraints():
+			return False
+
+		# Check if solved
+		if self.is_solved():
+			return True
+
+		guess_cell_coords, bit_array = self.find_cell_guess()
+		if guess_cell_coords is None or bit_array is None:
+			return False
+		x, y = guess_cell_coords
+
+		# Apply guess and recurse
+		self.apply_constraint(x, y, bit_array)
+		if self.solve():
+			return True
+
+		# Guess was wrong, flip and recurse
+		bit_array = ~bit_array
+		self.restore_state()
+		self.apply_constraint(x, y, bit_array)
+		if self.solve():
+			return True
+
+		# Restore failed second-branch guess before unwinding.
+		self.restore_state()
+		return False
 
 	# -------------------------------------------------
 	# PRINTING

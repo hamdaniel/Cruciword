@@ -10,14 +10,14 @@ def main(seed=None):
 
 	random.seed(seed)
 
-	board = Board(15, 15)
+	board = Board(5, 5)
 	board.load_dataset("Data/datasets/wiktionary_heb")
 	while True:
 		board.reset_generation_state()
 		board.generate_skeleton()
 		board.init_cells_possibilities()
 		board.init_runs_possibilities()
-		if(board.propagate_constraints()):
+		if(board.solve()):
 			print(board)
 			break
 		else:
